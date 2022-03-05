@@ -1,3 +1,4 @@
+from logging import root
 import orhelper
 from orhelper import FlightDataType, FlightEvent
 from orhelper import JIterator
@@ -6,21 +7,14 @@ from typing import Union, List, Iterable, Dict
 import numpy as np
 
 ''' Extend FlightDataType to include our added data types. '''
-added_datatypes = [
-    'TYPE_DAMPING_COEFF',
-    'TYPE_DAMPING_RATIO',
-    'TYPE_CORRECTIVE_COEFF',
-    'TYPE_NATURAL_FREQUENCY',
-    'TYPE_DYNAMIC_PRESSURE',
-    'TYPE_FLUTTER_VELOCITY',
-]
-
-datatypenames = [m.name for m in FlightDataType] + added_datatypes
-datatypedict = {}
-for i in range(len(datatypenames)):
-    datatypedict[datatypenames[i]] = i+1
-
-FlightDataType = Enum('FlightDataType', datatypedict)
+flightdatalen = max([x.value for x in FlightDataType])
+class ExtendedDataType(Enum):
+    TYPE_DAMPING_COEFF = flightdatalen + 1
+    TYPE_DAMPING_RATIO = flightdatalen + 2
+    TYPE_CORRECTIVE_COEFF = flightdatalen + 3
+    TYPE_NATURAL_FREQUENCY = flightdatalen + 4
+    TYPE_DYNAMIC_PRESSURE = flightdatalen + 5
+    TYPE_FLUTTER_VELOCITY = flightdatalen + 6
 
 ''' orhelper add-on functions. '''
 def get_all_components(rocket,debug=False):
@@ -31,6 +25,35 @@ def get_all_components(rocket,debug=False):
          if debug:
              print(component.getName())
     return ret
+
+def calculate_fin_flutter_coeff(rocket):
+    ''' Get fin components and calculate flutter coeff - the resulting fin flutter critical speed is:
+            v_finflutter = flutter_coeff * a * sqrt(G/P)
+
+            where  a = speed of sound at current altitude
+                   G = shear modulus of fin material (assumed isotropic)
+                   P = static pressure at current altitude
+     '''
+    fins = None
+    for component in JIterator(rocket):
+        try:
+            component.getRootChord() # check to see if component is a TrapezoidalFinSet
+            fins = component
+            break
+        except:
+            pass
+    if fins is None:
+        raise AttributeError("Rocket does not have a trapezoidal fin set.")
+    rootchord = float(fins.getRootChord())
+    tipchord = float(fins.getTipChord())
+    thickness = float(fins.getThickness())
+    semispan = float(fins.getSpan())
+    fin_area = 0.5*(rootchord+tipchord)*semispan
+    aspect_ratio = (semispan**2)/fin_area
+    l = tipchord/rootchord
+    vf_coeff = np.sqrt(2*(aspect_ratio+2)*((thickness/rootchord)**3)/(1.337*(aspect_ratio**3)*(l+1)))
+
+    return vf_coeff
 
 def get_simulation_names(doc):
     ''' Get all simulations in a doc and return them as a list.'''
