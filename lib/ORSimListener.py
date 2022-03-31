@@ -1,107 +1,13 @@
 import orhelper
-import orhelperhelper as orhh
+from lib import orhelperhelper as orhh
 import numpy as np
 import matplotlib.pyplot as plt
 from random import gauss
 from tkinter import filedialog
 from orhelper import FlightDataType, FlightEvent, JIterator
-from orhelperhelper import ExtendedDataType
+from .orhelperhelper import ExtendedDataType
 import tkinter as tk
 from tkinter import ttk
-
-
-''' Simulation class definitions. '''
-class ORSims(list):
-    def __init__(self):
-        self.ORjar_file = None # path to OpenRocket JAR file
-        self.ork_file= None # name of ork file to be loaded
-        self.doc = None
-
-    def ask_ORdoc(self):
-        hold = filedialog.askopenfilename(title='Select an OpenRocket Document',filetypes=(('OpenRocket Documents','*.ork'),))
-        if hold is not None and hold != "":
-            self.ork_file = hold
-
-    def ask_sim(self):
-        def askComboValue(*values):
-            top = tk.Toplevel() # use Toplevel() instead of Tk()
-            tk.Label(top, text='Select which motor to use:').pack()
-            box_value = tk.StringVar()
-            combo = ttk.Combobox(top, textvariable=box_value, values=values)
-            combo.pack()
-            combo.bind('<<ComboboxSelected>>', lambda _: top.destroy())
-            top.grab_set()
-            top.wait_window(top)  # wait for itself destroyed, so like a modal dialog
-            return box_value.get()
-        sim_names = orhh.get_simulation_names(self.doc)
-        if len(sim_names) < 2:
-            return 0
-        else:
-            hold = askComboValue(*tuple(sim_names))
-            try:
-                return sim_names.index(hold)
-            except ValueError:
-                return -1
-
-    
-    def add_sims(self, num_sims = 1):
-        with orhelper.OpenRocketInstance() as instance:
-
-            # Load the document and get simulation
-            orh = orhelper.Helper(instance)
-            if self.ork_file == None:
-                self.ask_ORdoc()
-            if self.ork_file == None:
-                return False
-            self.doc = orh.load_doc(self.ork_file)
-            # TO-DO: ask user which simulation they want loaded
-            sim_ind = self.ask_sim()
-            if sim_ind < 0:
-                return False
-            sim = self.doc.getSimulation(sim_ind) 
-
-            for i in range(num_sims):
-                # Randomize various parameters
-                opts = sim.getOptions()
-                rocket = opts.getRocket()
-
-                # Run simulation
-                orsimlistener = ORSimListener(sim, rocket)
-                orh.run_simulation(sim,listeners=[orsimlistener])
-                data = orh.get_timeseries(sim, [e for e in FlightDataType]) # get all data available
-                extended_data = orsimlistener.get_results()
-                data.update(extended_data)
-                events = orh.get_events(sim)
-                
-                # Add data to simulation list
-                self.append(data)           
-
-        return True 
-    
-    def plot_sims(self):
-        for i in range(len(self)):
-            xtime = self[i][FlightDataType.TYPE_TIME]
-            # Plot Extended Data
-            plt.figure(0)
-            plt.plot(xtime, self[i][ExtendedDataType.TYPE_DAMPING_RATIO])
-            plt.title("Damping Ratio")
-            plt.xlabel('time (s)')
-            plt.ylabel('\zeta')
-
-            plt.figure(1)
-            plt.plot(xtime, self[i][ExtendedDataType.TYPE_NATURAL_FREQUENCY])
-            plt.title("Natural Frequency")
-            plt.xlabel('time (s)')
-            plt.ylabel('Natural Freq (Hz)')
-
-            plt.figure(2)
-            plt.plot(xtime, np.abs(np.divide(self[i][FlightDataType.TYPE_VELOCITY_TOTAL],np.multiply(np.sqrt(10E9),self[i][ExtendedDataType.TYPE_FLUTTER_VELOCITY]))))
-            plt.title("Velocity to Fin Flutter Speed Ratio")
-            plt.xlabel('time (s)')
-            plt.ylabel('Speed Ratio')
-
-        plt.show()
-
 
 
 class ORSimListener(orhelper.AbstractSimulationListener):
@@ -119,6 +25,9 @@ class ORSimListener(orhelper.AbstractSimulationListener):
                         ExtendedDataType.TYPE_NATURAL_FREQUENCY:[],
                         ExtendedDataType.TYPE_DYNAMIC_PRESSURE:[],
                         ExtendedDataType.TYPE_FLUTTER_VELOCITY:[],
+                        ExtendedDataType.TYPE_CHAR_OSCILLATION_DISTANCE:[],
+                        ExtendedDataType.TYPE_FLUTTER_VELOCITY_CF:[],
+                        ExtendedDataType.TYPE_FLUTTER_VELOCITY_FG:[],
                         }
         self.rocket = rocket
         self.x_ne = rocket.getLength()
@@ -187,9 +96,13 @@ class ORSimListener(orhelper.AbstractSimulationListener):
             C2A = 0.5*dens*vel*area_ref*sum([(cna_x-cg)**2 for cna_x in cnas]) # Aerodynamic damping coefficient
             C2 = np.add(C2R,C2A) # Damping coefficient
             DR = C2/(2*np.sqrt(C1*I_long)) # Damping Ratio
-            NF = np.sqrt(C1/I_long)/(2*np.pi) #Natural frequency 
+            NF = np.sqrt(C1/I_long)  #Natural frequency, Hz 
+            COD = NF/vel # Characteristic oscillation distance, 1/m
             Q = 0.5*dens*(vel**2) # Dynamic pressure
-            VF = soundspeed*self.vf_coeff/np.sqrt(pres) # fin flutter velocity with unity shear modulus
+            VF = soundspeed*self.vf_coeff/np.sqrt(pres) # fin flutter velocity with unity shear modulus, m/s
+            safety_factor = 10 # safety factor on shear moduli for orthotropic consideration
+            VF_CF = VF*np.sqrt(1E10/safety_factor) # fin flutter velocity with shear modulus of carbon fiber, ~10GPa
+            VF_FG = VF*np.sqrt(3E10/safety_factor) # fin flutter velocity with shear modulus of fiber glass, ~30GPa
         
         else:
             ''' If not in air-stabilized ascent phase, append NaN. '''
@@ -200,15 +113,21 @@ class ORSimListener(orhelper.AbstractSimulationListener):
             C2 = np.nan # Damping coefficient
             DR = np.nan # Damping Ratio
             NF = np.nan #Natural frequency 
+            COD = np.nan # Characteristic oscillation distance
             Q = np.nan # Dynamic pressure
             VF = np.nan # fin flutter velocity with unity shear modulus
+            VF_CF = np.nan
+            VF_FG = np.nan
 
         self.results[ExtendedDataType.TYPE_DAMPING_COEFF].append(C2)
         self.results[ExtendedDataType.TYPE_DAMPING_RATIO].append(DR)
         self.results[ExtendedDataType.TYPE_CORRECTIVE_COEFF].append(C1)
         self.results[ExtendedDataType.TYPE_NATURAL_FREQUENCY].append(NF)
+        self.results[ExtendedDataType.TYPE_CHAR_OSCILLATION_DISTANCE].append(COD)
         self.results[ExtendedDataType.TYPE_DYNAMIC_PRESSURE].append(Q)
         self.results[ExtendedDataType.TYPE_FLUTTER_VELOCITY].append(VF)
+        self.results[ExtendedDataType.TYPE_FLUTTER_VELOCITY_CF].append(VF_CF)
+        self.results[ExtendedDataType.TYPE_FLUTTER_VELOCITY_FG].append(VF_FG)
 
         return super().postStep(status)
     
@@ -216,7 +135,3 @@ class ORSimListener(orhelper.AbstractSimulationListener):
         # return dict of results in order of type enumeration
         return self.results
 
-if __name__ == '__main__':
-    sims = ORSims()
-    if sims.add_sims(1): # run passed number of OR sims
-        sims.plot_sims() # display output in graphic
