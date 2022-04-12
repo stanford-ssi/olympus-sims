@@ -49,13 +49,14 @@ metric_mult = {
 
 ''' The preferred unit for a given type of base unit. If a base unit doesn't have a preferred definition here, uses base unit as preferred.'''
 unit_preferred = {
-    "m" : "in",
+    "m" : "ft",
     "L" : "L",
     "N" : "lbf",
     "s" : "s",
     "g" : "lb",
     "Pa": "psi",
-    "K" : "K"
+    "K" : "K",
+    "rad" : "deg",
 }
 
 class Units():

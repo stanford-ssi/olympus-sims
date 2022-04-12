@@ -91,10 +91,10 @@ class PlotPane(ttk.Notebook):
         self.legends.append(None)
 
         my_ind = len(self.names)-1
-        leftunit = DataTypeMap[leftkeys[0]].unit
+        leftunit = units.get_preferred_unit(DataTypeMap[leftkeys[0]].unit)
         leftselvar = tk.StringVar(frame,value=leftunit)
         leftselector = ttk.OptionMenu(frame,leftselvar,leftunit,*tuple(units.get_compatible_units(leftunit)))
-        rightunit = DataTypeMap[rightkeys[0]].unit
+        rightunit = units.get_preferred_unit(DataTypeMap[rightkeys[0]].unit)
         rightselvar = tk.StringVar(frame)
         rightselector = ttk.OptionMenu(frame,rightselvar,rightunit,*tuple(units.get_compatible_units(rightunit)))
         eventselector = tk.Listbox(frame,selectmode='multiple',exportselection=False)

@@ -135,3 +135,4 @@ class ORSimListener(orhelper.AbstractSimulationListener):
         # return dict of results in order of type enumeration
         return self.results
 
+

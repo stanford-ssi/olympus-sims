@@ -6,6 +6,7 @@
 '''
 
 from email import iterators
+from gc import callbacks
 import tkinter as tk
 import tkinter.ttk as ttk
 from turtle import left
@@ -66,7 +67,7 @@ class FreePlotPane(ttk.Notebook):
     def update_sim(self,newsim):
         self.sim = newsim
 
-    def update(self,index = None,keep_lims=False):
+    def update(self,index = None,keep_lims=False,iter_change=False):
         def plot_events(ax):
             events = self.sim.events[int(self.iteratorsels[index].get())-1]
             names = [EventTypeMap[key] for key in events]
@@ -95,6 +96,10 @@ class FreePlotPane(ttk.Notebook):
         ax[1].clear()
         if self.sim is None:
             return
+        if not iter_change:
+            hold = self.iteratorsels[index].get()
+            self.iteratorsels[index].configure(to=len(self.sim.data))
+            self.iteratorsels[index].set(min(hold,len(self.sim.data)))
         data = self.sim.data[int(self.iteratorsels[index].get())-1]
         
         if len(data) == 0:
@@ -161,11 +166,11 @@ class FreePlotPane(ttk.Notebook):
         self.selectors.append([leftselector, rightselector, eventselector])
 
         itervar = tk.IntVar(self,value=1)
+        num_iters = 1
         if self.sim is not None:
-            iterselector = ttk.Scale(frame,from_=1,to_=len(self.sim.num_iters),orient='horizontal',variable=itervar)
-        else:
-            iterselector = ttk.Scale(frame,from_=1,to_=1,orient='horizontal',variable=itervar)
-        itervar.trace_add(mode='write',callback=lambda *args:self.update(my_ind))
+            len(self.sim.num_iters)
+        cb = lambda *args: self.update(my_ind,iter_change=True)
+        iterselector = tk.Scale(frame,from_=1,to_=num_iters,orient='horizontal',variable=itervar,tickinterval=1,showvalue=True,bg='black',fg='white',bd=0, highlightthickness=0,command=cb)
         self.iteratorsels.append(iterselector)
 
         self.canvases.append(FigureCanvasTkAgg(self.figs[-1], master = canvasframe))
@@ -174,8 +179,7 @@ class FreePlotPane(ttk.Notebook):
         self.canvases[-1].get_tk_widget().pack(fill='both',expand=True,side='top')
 
         ttk.Label(frame,text="Iteration ").grid(row=0,column=3,sticky='nsew')
-        ttk.Label(frame,textvariable=itervar).grid(row=0,column=4,sticky='nsew')
-        iterselector.grid(row=0,column=5,columnspan=2,sticky='nsew')
+        iterselector.grid(row=0,column=4,columnspan=3,sticky='nsew')
         leftselector.grid(row=1,column=0,columnspan=3,sticky='nsew')
         rightselector.grid(row=1,column=3,columnspan=3,sticky='nsew')
         eventselector.grid(row=1,column=6,sticky='nsew')
@@ -271,10 +275,10 @@ class DataSelector(ttk.Frame):
         self.unitvar.trace_add(mode='write', callback=lambda *args:self.update(idx))
         if modifier == 'Left':
             self.datasel = ttk.OptionMenu(self,self.datavar,DataTypeMap[list(DataTypeMap.keys())[1]].name,*tuple(DataSelector.data_names))
-            self.unitvar.set(DataTypeMap[list(DataTypeMap.keys())[1]].unit)
+            self.unitvar.set(units.get_preferred_unit(DataTypeMap[list(DataTypeMap.keys())[1]].unit))
         else:
             self.datasel = ttk.OptionMenu(self,self.datavar,DataTypeMap[list(DataTypeMap.keys())[2]].name,*tuple(DataSelector.data_names))
-            self.unitvar.set(DataTypeMap[list(DataTypeMap.keys())[2]].unit)
+            self.unitvar.set(units.get_preferred_unit(DataTypeMap[list(DataTypeMap.keys())[2]].unit))
  
         ttk.Label(self,text=modifier + ' Axis Data: ').grid(row=0,column=0,sticky='nsew')
         self.datasel.grid(row=0,column=1,sticky='nsew')
